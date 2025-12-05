@@ -2,141 +2,639 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Debug Player - Fix Playback</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>YouTube Ultimate v60 (Native Queue)</title>
     <style>
-        body { background: #121212; color: white; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        :root { --bg: #0f0f0f; --surface: #1e1e1e; --text: #ffffff; --primary: #ff0000; --accent: #3ea6ff; --nav-height: 60px; }
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: Roboto, Arial, sans-serif; background: var(--bg); color: var(--text); padding-bottom: 80px; overflow-y: scroll; }
         
-        /* Search Area */
-        .search-box { display: flex; gap: 10px; margin-bottom: 20px; width: 100%; max-width: 600px; }
-        input { flex: 1; padding: 12px; border-radius: 4px; border: 1px solid #333; background: #222; color: white; font-size: 16px; outline: none; }
-        button { padding: 12px 24px; background: #cc0000; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 16px; }
-        button:hover { background: #ff0000; }
+        /* 1. NAVBAR (TOP) */
+        .navbar {
+            position: fixed; top: 0; left: 0; width: 100%; z-index: 3000;
+            background: rgba(15, 15, 15, 0.98); border-bottom: 1px solid #333;
+            padding: 8px 12px; display: flex; gap: 8px; align-items: center; height: 56px;
+        }
+        .logo { font-weight: bold; font-size: 16px; color: white; white-space: nowrap; cursor: pointer; margin-right: 5px;}
+        .logo span { color: var(--primary); }
         
-        /* Player Area */
-        #player-container { width: 100%; max-width: 600px; aspect-ratio: 16/9; background: black; margin-bottom: 10px; border: 1px solid #333; }
+        .search-box { flex-grow: 1; display: flex; background: #222; border-radius: 18px; border: 1px solid #333; overflow: hidden; }
+        .filter-select {
+            background: transparent; color: #aaa; border: none; border-right: 1px solid #444; 
+            outline: none; padding: 0 8px; font-size: 12px; cursor: pointer; max-width: 70px;
+        }
+        .filter-select option { background: #222; color: white; }
+        .search-box input { width: 100%; padding: 6px 10px; background: transparent; border: none; color: white; outline: none; font-size: 14px; }
         
-        /* Debug / Status Log */
-        .status-box { width: 100%; max-width: 600px; background: #000; border: 1px solid #444; padding: 10px; height: 150px; overflow-y: scroll; font-family: monospace; font-size: 12px; color: #00ff00; }
-        .log-entry { margin-bottom: 4px; border-bottom: 1px solid #222; }
-        .error-entry { color: #ff4444; }
+        /* Buttons in Nav */
+        .nav-btn { padding: 0 12px; background: #333; border: none; border-left: 1px solid #444; color: #aaa; cursor: pointer; font-size: 14px; }
+        .nav-btn:active { background: #555; color: white; }
+        .del-btn { color: #ff4444; }
+
+        #nav-spacer { height: 56px; }
+
+        /* 2. PLAYER & CONTROLS */
+        #player-wrapper {
+            position: sticky; top: 56px; z-index: 2500; background: black; width: 100%; transition: all 0.3s ease;
+        }
+        .video-container { width: 100%; aspect-ratio: 16/9; background: black; position: relative; }
+        
+        /* Mini Player Mode */
+        #player-wrapper.mini {
+            position: fixed !important; top: auto !important; 
+            bottom: 70px; right: 15px;
+            width: 180px; z-index: 5000; border: 1px solid #444; box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+        }
+        #player-wrapper.mini .controls-section, 
+        #player-wrapper.mini .video-info { display: none; }
+        #player-wrapper.mini .video-container { pointer-events: none; }
+        .mini-overlay { display: none; position: absolute; top:0; left:0; width:100%; height:100%; z-index: 5001; cursor: pointer; pointer-events: auto; }
+        #player-wrapper.mini .mini-overlay { display: block; }
+
+        .video-info { padding: 12px; background: var(--bg); border-bottom: 1px solid #333; }
+        .v-title { font-size: 15px; font-weight: 500; margin-bottom: 10px; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        
+        /* ACTION BAR STYLE */
+        .control-bar { display: flex; gap: 8px; justify-content: space-between; }
+        .action-btn {
+            flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+            background: #222; color: #ccc; border: 1px solid #333; padding: 6px 2px;
+            border-radius: 8px; font-size: 10px; cursor: pointer; min-width: 50px; transition: background 0.2s;
+        }
+        .action-btn:active { background: #333; color: white; }
+        .action-icon { font-size: 16px; margin-bottom: 2px; }
+
+        /* 3. TABS (BOTTOM BAR) */
+        .tabs-container {
+            position: fixed; bottom: 0; left: 0; width: 100%; z-index: 4000;
+            background: #0f0f0f; border-top: 1px solid #333;
+            display: flex; height: var(--nav-height);
+            justify-content: space-around; align-items: center;
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+        .tab {
+            flex: 1; padding: 8px 0; color: #aaa; background: transparent;
+            border: none; font-size: 10px; font-weight: bold; cursor: pointer;
+            display: flex; flex-direction: column; align-items: center; gap: 4px;
+        }
+        .tab span { font-size: 18px; }
+        .tab.active { color: white; }
+        
+        /* 4. CONTENT LISTS */
+        .content-area { min-height: 300px; padding-bottom: 70px; }
+        .view-section { display: none; }
+        .view-section.active { display: block; }
+        .list-msg { text-align: center; color: #777; padding: 40px 20px; font-size: 14px; }
+        
+        /* Video Items */
+        .v-item { display: flex; gap: 10px; padding: 10px; cursor: pointer; border-bottom: 1px solid #222; transition: background 0.2s; }
+        .v-item.active-playing { background: #2a2a2a; border-left: 4px solid var(--primary); }
+        .v-thumb { width: 140px; height: 80px; object-fit: cover; background: #222; border-radius: 6px; flex-shrink: 0; }
+        .v-details { flex-grow: 1; display: flex; flex-direction: column; justify-content: flex-start; }
+        .v-text { font-size: 13px; line-height: 1.3; margin-bottom: 4px; color: white; max-height: 34px; overflow: hidden; }
+        .v-sub { font-size: 11px; color: #aaa; }
+        .v-type { display: inline-block; padding: 2px 4px; background: #333; color: #ddd; font-size: 9px; border-radius: 3px; margin-top: 4px; width: fit-content;}
+        
+        /* Channel Buttons */
+        .btn-group { display: flex; gap: 8px; margin-top: 6px; }
+        .btn-sm { padding: 4px 10px; background: #333; color: white; border: 1px solid #444; border-radius: 4px; font-size: 10px; font-weight: bold; cursor: pointer; }
+        .btn-sm:active { background: #555; }
+
+        .load-more-btn {
+            display: block; width: 90%; margin: 15px auto; padding: 10px;
+            background: #222; color: white; border: 1px solid #444; border-radius: 4px; cursor: pointer;
+        }
+
+        /* HISTORY MODAL */
+        #history-modal {
+            display: none; position: fixed; top: 56px; left: 0; width: 100%; height: calc(100% - 116px);
+            background: rgba(0,0,0,0.95); z-index: 2900; overflow-y: auto; padding: 20px;
+        }
+        .hist-item {
+            padding: 15px; border-bottom: 1px solid #333; cursor: pointer; font-size: 14px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .hist-item:hover { background: #222; }
+        .hist-tag { font-size: 10px; background: #333; padding: 2px 6px; border-radius: 4px; color: #aaa; margin-right: 10px;}
+        .hist-query { flex-grow: 1; color: white; }
     </style>
 </head>
 <body>
 
-    <h2>YouTube API Playlist Test</h2>
-    
-    <div class="search-box">
-        <input type="text" id="query" placeholder="Enter topic (e.g. 'NCS Music')" value="NCS Music">
-        <button id="btn-play" onclick="startProcess()">Load & Play</button>
-    </div>
-
-    <div id="player-container">
-        <div id="player"></div>
-    </div>
-
-    <div class="status-box" id="debug-log">
-        <div class="log-entry">Waiting for user...</div>
-    </div>
-
     <script src="https://www.youtube.com/iframe_api"></script>
-    
+
+    <div class="navbar">
+        <div class="logo" onclick="app.goHome()">YT<span>Ult</span></div>
+        <div class="search-box">
+            <select id="searchFilter" class="filter-select">
+                <option value="mix">Mix</option>
+                <option value="channel">Channel</option>
+                <option value="playlist">Playlist</option>
+            </select>
+            <input type="text" id="searchInput" placeholder="Search...">
+            
+            <button class="nav-btn" onclick="app.search()" title="Search">🔍</button>
+            <button class="nav-btn" onclick="app.toggleHistory()" title="History">🕒</button>
+            <button class="nav-btn del-btn" onclick="app.clearCache()" title="Clear Cache">🗑️</button>
+        </div>
+    </div>
+    <div id="nav-spacer"></div>
+
+    <div id="history-modal">
+        <div style="text-align:center; color:#aaa; margin-bottom:15px;">Search History (Saved)</div>
+        <div id="history-list"></div>
+        <button class="load-more-btn" onclick="app.toggleHistory()">Close</button>
+    </div>
+
+    <div id="player-wrapper">
+        <div class="video-container">
+            <div id="player"></div>
+            <div class="mini-overlay" onclick="app.toggleMini()"></div>
+        </div>
+        <div class="video-info">
+            <div class="v-title" id="current-title">Choose a video</div>
+            <div class="control-bar">
+                <button class="action-btn" id="btn-auto" onclick="app.toggleAuto()">
+                    <span class="action-icon">▶</span>Auto On
+                </button>
+                <button class="action-btn" onclick="app.shuffleCurrent()">
+                    <span class="action-icon">🔀</span>Mix
+                </button>
+                <button class="action-btn" onclick="app.toggleMini()">
+                    <span class="action-icon">🔳</span>Mini
+                </button>
+                <button class="action-btn" onclick="app.generateRelated()">
+                    <span class="action-icon">🎲</span>Related
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="content-area">
+        <div id="view-home" class="view-section active">
+            <div id="list-home"></div>
+            <div id="msg-home" class="list-msg">Search or Trending will appear here.</div>
+            <button id="more-home" class="load-more-btn" style="display:none" onclick="app.loadMore('home')">Load More</button>
+        </div>
+        <div id="view-now" class="view-section">
+            <div id="list-now"></div>
+            <div id="msg-now" class="list-msg">Play a video and click 'Load Related'.</div>
+            <button id="more-now" class="load-more-btn" style="display:none" onclick="app.loadMore('now')">Load More</button>
+        </div>
+        <div id="view-p_vids" class="view-section">
+            <div id="list-p_vids"></div>
+            <div id="msg-p_vids" class="list-msg">Select a playlist to see videos.</div>
+            <button id="more-p_vids" class="load-more-btn" style="display:none" onclick="app.loadMore('p_vids')">Load More</button>
+        </div>
+        <div id="view-p_list" class="view-section">
+            <div id="list-p_list"></div>
+            <div id="msg-p_list" class="list-msg">Search results for Playlists appear here.</div>
+            <button id="more-p_list" class="load-more-btn" style="display:none" onclick="app.loadMore('p_list')">Load More</button>
+        </div>
+    </div>
+
+    <div class="tabs-container" id="tabs-bar">
+        <button class="tab active" onclick="app.switchTab('home')"><span>🏠</span>Home</button>
+        <button class="tab" onclick="app.switchTab('now')"><span>🎵</span>Now Playing</button>
+        <button class="tab" onclick="app.switchTab('p_vids')"><span>📺</span>Videos</button>
+        <button class="tab" onclick="app.switchTab('p_list')"><span>📑</span>Playlists</button>
+    </div>
+
     <script>
-        // YOUR KEY
-        const MY_KEY = 'AIzaSyDf9K1gK2yR0ELuWrB2vBJpxgzL7ox8ogQ';
-        let player;
-        let isPlayerReady = false;
+         const API_KEYS = [
+            'AIzaSyAwhx-BR7rqIvSInJRKcNSECht6JHdbrbs',
+            'AIzaSyCh8AnG5FrrXlxxrmqsYRZLMkI8jT3J_XY',
+            'AIzaSyB66xstqYkrTnoo9ga5RlmfrynBgZ5cVbY',
+           'AIzaSyDf9K1gK2yR0ELuWrB2vBJpxgzL7ox8ogQ'
+        ]; 
 
-        // 1. Logger Function (Prints to the black box)
-        function log(msg, isError = false) {
-            const box = document.getElementById('debug-log');
-            const div = document.createElement('div');
-            div.className = isError ? 'log-entry error-entry' : 'log-entry';
-            div.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
-            box.prepend(div); // Add to top
-            console.log(msg);
-        }
+        const CACHE_KEY = 'yt_ult_v60_native';
 
-        // 2. Initialize Player
-        function onYouTubeIframeAPIReady() {
-            log("API Loaded. Creating Player...");
-            player = new YT.Player('player', {
-                height: '100%',
-                width: '100%',
-                playerVars: { 
-                    'autoplay': 1, 
-                    'controls': 1,
-                    'origin': window.location.origin // Fixes some embedding blocks
-                },
-                events: {
-                    'onReady': onPlayerReady,
-                    'onError': onPlayerError,
-                    'onStateChange': onPlayerStateChange
+        const app = {
+            player: null,
+            keyIndex: 0,
+            autoPlay: true,
+            activeTab: 'home',
+            playingContext: 'home',
+            currentVideoId: null,
+            currentVideoTitle: '',
+
+            data: {
+                home:   { items: [], token: '', params: {}, scroll: 0 },
+                now:    { items: [], token: '', params: {}, scroll: 0 },
+                p_vids: { items: [], token: '', params: {}, scroll: 0 },
+                p_list: { items: [], token: '', params: {}, scroll: 0 }
+            },
+            
+            searchHistory: {},
+
+            init: function() {
+                if(this.loadCache()) {
+                    console.log("Restored from cache");
+                } else {
+                    this.fetchData('videos', { chart: 'mostPopular', regionCode: 'IN', part: 'snippet', maxResults: 15 }, 'home');
                 }
+            },
+
+            // --- CACHING SYSTEM ---
+            saveCache: function() {
+                const state = {
+                    data: this.data,
+                    searchHistory: this.searchHistory,
+                    activeTab: this.activeTab,
+                    playingContext: this.playingContext,
+                    currentVideoId: this.currentVideoId,
+                    currentVideoTitle: this.currentVideoTitle,
+                    currentScroll: window.scrollY
+                };
+                state.data[this.activeTab].scroll = window.scrollY;
+                try {
+                    localStorage.setItem(CACHE_KEY, JSON.stringify(state));
+                } catch(e) { console.warn("Cache full"); }
+            },
+
+            loadCache: function() {
+                const raw = localStorage.getItem(CACHE_KEY);
+                if(!raw) return false;
+                try {
+                    const state = JSON.parse(raw);
+                    this.data = state.data;
+                    this.searchHistory = state.searchHistory || {}; 
+                    this.activeTab = state.activeTab;
+                    this.playingContext = state.playingContext;
+                    this.currentVideoId = state.currentVideoId;
+                    this.currentVideoTitle = state.currentVideoTitle;
+                    
+                    this.renderList('home');
+                    this.renderList('now');
+                    this.renderList('p_vids');
+                    this.renderList('p_list');
+                    
+                    this.switchTab(this.activeTab, false);
+                    if(state.currentScroll) setTimeout(()=> window.scrollTo(0, state.currentScroll), 100);
+                    
+                    if(this.currentVideoTitle) document.getElementById('current-title').innerText = this.currentVideoTitle;
+                    if(this.currentVideoId) this.highlightActive();
+
+                    return true;
+                } catch(e) {
+                    return false;
+                }
+            },
+
+            clearCache: function() {
+                if(confirm("Clear ALL history and saved data?")) {
+                    localStorage.removeItem(CACHE_KEY);
+                    location.reload();
+                }
+            },
+
+            toggleHistory: function() {
+                const modal = document.getElementById('history-modal');
+                const list = document.getElementById('history-list');
+                
+                if (modal.style.display === 'block') {
+                    modal.style.display = 'none';
+                } else {
+                    modal.style.display = 'block';
+                    list.innerHTML = "";
+                    const keys = Object.keys(this.searchHistory).reverse(); 
+                    if(keys.length === 0) {
+                        list.innerHTML = "<div style='text-align:center; color:#555;'>No history yet.</div>";
+                        return;
+                    }
+                    keys.forEach(key => {
+                        const [type, ...queryParts] = key.split('|');
+                        const query = queryParts.join('|');
+                        const div = document.createElement('div');
+                        div.className = 'hist-item';
+                        div.innerHTML = `<span class="hist-tag">${type.toUpperCase()}</span><span class="hist-query">${query}</span><span>➤</span>`;
+                        div.onclick = () => {
+                            this.restoreSearch(key);
+                            modal.style.display = 'none';
+                        };
+                        list.appendChild(div);
+                    });
+                }
+            },
+
+            restoreSearch: function(key) {
+                const [type, ...queryParts] = key.split('|');
+                let targetTab = (type === 'playlist') ? 'p_list' : 'home';
+                this.switchTab(targetTab);
+                this.data[targetTab] = JSON.parse(JSON.stringify(this.searchHistory[key])); 
+                this.renderList(targetTab);
+                document.getElementById(`msg-${targetTab}`).innerText = "Loaded from History (Offline)";
+                this.saveCache();
+            },
+
+            getKey: function() { return API_KEYS[this.keyIndex]; },
+            rotateKey: function() { this.keyIndex = (this.keyIndex + 1) % API_KEYS.length; },
+
+            // --- DATA FETCHING ---
+            async fetchData(endpoint, params, targetSection, isAppend = false) {
+                const target = this.data[targetSection];
+                let urlParams = new URLSearchParams(params);
+                
+                for (let i = 0; i < API_KEYS.length; i++) {
+                    urlParams.set('key', this.getKey());
+                    try {
+                        const res = await fetch(`https://www.googleapis.com/youtube/v3/${endpoint}?${urlParams.toString()}`);
+                        const json = await res.json();
+
+                        if (json.error) {
+                            if (json.error.code === 403) { this.rotateKey(); continue; }
+                            throw new Error(json.error.message);
+                        }
+
+                        const processedItems = json.items.map(item => {
+                            let vidId = '';
+                            if(item.id.videoId) vidId = item.id.videoId;
+                            else if (item.snippet && item.snippet.resourceId && item.snippet.resourceId.videoId) vidId = item.snippet.resourceId.videoId; 
+                            else if(item.contentDetails && item.contentDetails.videoId) vidId = item.contentDetails.videoId; 
+                            else if(typeof item.id === 'string') vidId = item.id;
+                            return { ...item, cleanId: vidId };
+                        });
+
+                        if (!isAppend) {
+                            target.items = processedItems;
+                            target.params = params;
+                        } else {
+                            const newItems = processedItems.filter(n => !target.items.some(e => e.cleanId === n.cleanId));
+                            target.items = [...target.items, ...newItems];
+                        }
+
+                        target.token = json.nextPageToken || '';
+                        this.renderList(targetSection);
+                        if(targetSection === 'p_vids') this.highlightActive();
+                        
+                        this.saveCache();
+                        return true; 
+                    } catch (e) {
+                        console.error(e);
+                        return false;
+                    }
+                }
+            },
+
+            search: async function() {
+                const q = document.getElementById('searchInput').value.trim();
+                const filter = document.getElementById('searchFilter').value;
+                if (!q) return;
+
+                const cacheKey = `${filter}|${q.toLowerCase()}`;
+                if (this.searchHistory[cacheKey]) {
+                    this.restoreSearch(cacheKey);
+                    return; 
+                }
+
+                let targetTab = 'home';
+                let type = 'video,channel,playlist';
+                
+                if (filter === 'mix') { document.getElementById('msg-home').innerText = "Searching Mix..."; } 
+                else if (filter === 'channel') { document.getElementById('msg-home').innerText = "Searching Channels..."; type = 'channel'; } 
+                else if (filter === 'playlist') { targetTab = 'p_list'; document.getElementById('msg-p_list').innerText = "Searching Playlists..."; type = 'playlist'; }
+                
+                this.switchTab(targetTab);
+                const success = await this.fetchData('search', { q: q, part: 'snippet', type: type, maxResults: 50 }, targetTab);
+                if (success) {
+                    this.searchHistory[cacheKey] = JSON.parse(JSON.stringify(this.data[targetTab]));
+                    this.saveCache();
+                }
+            },
+
+            generateRelated: function() {
+                if (!this.currentVideoTitle) return alert("Play a video first.");
+                const raw = this.currentVideoTitle.replace(/[^\w\s]/gi, '');
+                const words = raw.split(/\s+/).filter(w => w.length > 3).slice(0, 4).join(' '); 
+                this.switchTab('now');
+                document.getElementById('msg-now').innerText = "Generating 50 related videos...";
+                this.fetchData('search', { q: words, part: 'snippet', type: 'video', maxResults: 50 }, 'now');
+            },
+
+            loadMore: function(section) {
+                const target = this.data[section];
+                if (!target.token) return;
+                const btn = document.getElementById(`more-${section}`);
+                btn.innerText = "Loading...";
+                const newParams = { ...target.params, pageToken: target.token, maxResults: 50 };
+                const ep = target.params.chart ? 'videos' : (target.params.playlistId ? 'playlistItems' : 'search');
+                this.fetchData(ep, newParams, section, true).then(() => btn.innerText = "Load More");
+            },
+
+            switchTab: function(tabId, save = true) {
+                if(this.activeTab !== tabId) this.data[this.activeTab].scroll = window.scrollY;
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.view-section').forEach(s => s.classList.remove('active'));
+                this.activeTab = tabId;
+                document.querySelector(`button[onclick="app.switchTab('${tabId}')"]`).classList.add('active');
+                document.getElementById(`view-${tabId}`).classList.add('active');
+                setTimeout(() => window.scrollTo(0, this.data[tabId].scroll), 10);
+                if(tabId === 'p_vids' || tabId === 'now') setTimeout(() => this.scrollToActive(), 100);
+                if(save) this.saveCache();
+            },
+
+            toggleMini: function() { document.getElementById('player-wrapper').classList.toggle('mini'); },
+
+            toggleAuto: function() {
+                this.autoPlay = !this.autoPlay;
+                const btn = document.getElementById('btn-auto');
+                const icon = this.autoPlay ? '▶' : '⏸';
+                const txt = this.autoPlay ? 'Auto On' : 'Auto Off';
+                btn.innerHTML = `<span class="action-icon">${icon}</span>${txt}`;
+            },
+
+            shuffleCurrent: function() {
+                const list = this.data[this.activeTab].items;
+                if (!list.length) return;
+                for (let i = list.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [list[i], list[j]] = [list[j], list[i]];
+                }
+                this.renderList(this.activeTab);
+                this.saveCache();
+            },
+
+            // --- KEY FIX: IMPROVED PLAY FUNCTION ---
+            playVideo: function(id, title, context, isAutoPlay = false) {
+                this.currentVideoId = id;
+                this.currentVideoTitle = title;
+                this.playingContext = context;
+                document.getElementById('current-title').innerText = title;
+                
+                // 1. Gather all video IDs from the current list (Home, Search, etc.)
+                const currentItems = this.data[context].items || [];
+                const playlistIds = currentItems
+                    .map(item => item.cleanId) // Only get the IDs
+                    .filter(vidId => vidId);   // Remove any nulls
+                
+                // 2. Find where the clicked video is in that list
+                const startIndex = playlistIds.indexOf(id);
+
+                // 3. Load the ENTIRE list into the player
+                if (this.player && typeof this.player.loadPlaylist === 'function') {
+                    this.player.loadPlaylist({
+                        playlist: playlistIds,
+                        index: startIndex, // Start playing at the clicked video
+                        startSeconds: 0
+                    });
+                } else {
+                    // Fallback for first load
+                    new YT.Player('player', {
+                        height: '100%', width: '100%',
+                        playerVars: { 'autoplay': 1, 'playsinline': 1, 'controls': 1 },
+                        events: {
+                            'onReady': (event) => {
+                                event.target.loadPlaylist({
+                                    playlist: playlistIds,
+                                    index: startIndex
+                                });
+                            },
+                            'onStateChange': this.onPlayerStateChange
+                        }
+                    });
+                }
+                
+                document.getElementById('player-wrapper').classList.remove('mini');
+                this.highlightActive();
+                if (isAutoPlay && context === 'p_vids') this.scrollToActive();
+                this.saveCache();
+            },
+
+            onPlayerStateChange: function(event) {
+                // With loadPlaylist, the player handles next/prev automatically.
+                // We only need this if we want to load MORE videos when the playlist ends.
+                if (event.data === YT.PlayerState.ENDED) {
+                     // Logic to load more could go here
+                }
+            },
+
+            // Kept for manual "Load More" logic if needed
+            playNext: async function() {
+                const contextData = this.data[this.playingContext];
+                const list = contextData.items;
+                const idx = list.findIndex(item => item.cleanId === app.currentVideoId);
+                
+                // If we are at the end of the list, load more data
+                if (idx === list.length - 1 && contextData.token) {
+                    const btn = document.getElementById(`more-${app.playingContext}`);
+                    if(btn) btn.innerText = "Auto-loading...";
+                    const newParams = { ...contextData.params, pageToken: contextData.token, maxResults: 50 };
+                    const ep = contextData.params.chart ? 'videos' : (contextData.params.playlistId ? 'playlistItems' : 'search');
+                    
+                    await app.fetchData(ep, newParams, app.playingContext, true);
+                    
+                    // After fetching new items, we need to update the player's playlist
+                    const newList = app.data[app.playingContext].items.map(i => i.cleanId);
+                    const newIndex = idx + 1;
+                    if (app.player && app.player.loadPlaylist) {
+                        app.player.loadPlaylist({
+                             playlist: newList,
+                             index: newIndex
+                        });
+                    }
+                }
+            },
+
+            highlightActive: function() {
+                document.querySelectorAll('.v-item.active-playing').forEach(el => el.classList.remove('active-playing'));
+                if(!this.currentVideoId) return;
+                const vidDiv = document.getElementById(`vid-${this.currentVideoId}`);
+                if(vidDiv) vidDiv.classList.add('active-playing');
+            },
+
+            scrollToActive: function() {
+                if(!this.currentVideoId) return;
+                const vidDiv = document.getElementById(`vid-${this.currentVideoId}`);
+                if(vidDiv) vidDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            },
+
+            loadPlaylist: function(pid) {
+                this.switchTab('p_vids');
+                document.getElementById('msg-p_vids').innerText = "Loading Playlist...";
+                this.fetchData('playlistItems', { playlistId: pid, part: 'snippet,contentDetails', maxResults: 50 }, 'p_vids');
+            },
+
+            loadChannelPlaylists: function(cid) {
+                this.switchTab('p_list');
+                document.getElementById('msg-p_list').innerText = "Loading Channel Playlists...";
+                this.fetchData('playlists', { channelId: cid, part: 'snippet,contentDetails', maxResults: 50 }, 'p_list');
+            },
+
+            async loadChannelVideos(cid) {
+                this.switchTab('now');
+                document.getElementById('msg-now').innerText = "Loading Channel Videos...";
+                let uploadsId = null;
+                for (let i = 0; i < API_KEYS.length; i++) {
+                    const key = API_KEYS[(this.keyIndex + i) % API_KEYS.length];
+                    try {
+                        const res = await fetch(`https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=${cid}&key=${key}`);
+                        const data = await res.json();
+                        if(data.items && data.items.length) { uploadsId = data.items[0].contentDetails.relatedPlaylists.uploads; break; } 
+                        else if (data.error && data.error.code === 403) { continue; } else { break; }
+                    } catch(e) {}
+                }
+                if(uploadsId) this.fetchData('playlistItems', { playlistId: uploadsId, part: 'snippet,contentDetails', maxResults: 50 }, 'now');
+                else document.getElementById('msg-now').innerText = "Could not find videos.";
+            },
+
+            renderList: function(section) {
+                const target = this.data[section];
+                const div = document.getElementById(`list-${section}`);
+                const msg = document.getElementById(`msg-${section}`);
+                const btn = document.getElementById(`more-${section}`);
+
+                if (target.items.length === 0) {
+                    div.innerHTML = ''; msg.style.display = 'block'; btn.style.display = 'none'; return;
+                }
+                msg.style.display = 'none';
+                btn.style.display = target.token ? 'block' : 'none';
+
+                let html = '';
+                target.items.forEach(item => {
+                    const s = item.snippet;
+                    if (!s) return;
+                    const id = item.cleanId; 
+                    const kind = item.id.kind || item.kind;
+                    const thumb = s.thumbnails?.medium?.url || s.thumbnails?.default?.url || '';
+                    const isVid = (kind === 'youtube#video' || kind === 'video' || kind === 'youtube#playlistItem');
+                    const isPl = (kind === 'youtube#playlist' || kind === 'playlist');
+                    const isCh = (kind === 'youtube#channel' || kind === 'channel');
+
+                    if (isVid) {
+                        html += `<div class="v-item ${id === app.currentVideoId ? 'active-playing' : ''}" id="vid-${id}" onclick="app.playVideo('${id}', '${s.title.replace(/'/g, "&apos;")}', '${section}', false)">
+                                <img class="v-thumb" src="${thumb}">
+                                <div class="v-details"><div class="v-text">${s.title}</div><div class="v-sub">${s.channelTitle}</div></div></div>`;
+                    } else if (isPl) {
+                         const pid = item.id.playlistId || item.id;
+                         html += `<div class="v-item" onclick="app.loadPlaylist('${pid}')"><img class="v-thumb" src="${thumb}">
+                                <div class="v-details"><div class="v-text">${s.title}</div><div class="v-type" style="background:#3ea6ff; color:black">PLAYLIST</div></div></div>`;
+                    } else if (isCh) {
+                        const cid = item.id.channelId || item.id;
+                        html += `<div class="v-item" style="cursor:default"><img class="v-thumb" style="border-radius:50%; width:80px; cursor:pointer" src="${thumb}" onclick="app.loadChannelVideos('${cid}')">
+                                <div class="v-details"><div class="v-text" style="cursor:pointer" onclick="app.loadChannelVideos('${cid}')">${s.title}</div>
+                                    <div class="v-type" style="background:white; color:black">CHANNEL</div>
+                                    <div class="btn-group"><button class="btn-sm" onclick="app.loadChannelVideos('${cid}')">VIDEOS</button>
+                                        <button class="btn-sm" onclick="app.loadChannelPlaylists('${cid}')">PLAYLISTS</button></div></div></div>`;
+                    }
+                });
+                div.innerHTML = html;
+                if(section === app.playingContext) this.highlightActive();
+            }
+        };
+
+        function onYouTubeIframeAPIReady() {
+            app.player = new YT.Player('player', {
+                height: '100%', width: '100%',
+                playerVars: { 'autoplay': 1, 'playsinline': 1, 'controls': 1 },
+                events: { 'onStateChange': app.onPlayerStateChange }
             });
         }
 
-        function onPlayerReady(event) {
-            isPlayerReady = true;
-            log("Player is READY. You can now click Search.");
-        }
+        document.getElementById('searchInput').addEventListener('keypress', (e) => { if (e.key === 'Enter') app.search(); });
+        app.init();
+        window.addEventListener('beforeunload', () => app.saveCache());
 
-        function onPlayerError(event) {
-            let errorMsg = "Unknown Error";
-            if (event.data === 2) errorMsg = "Invalid Parameter";
-            if (event.data === 100) errorMsg = "Video Not Found (Removed/Private)";
-            if (event.data === 101 || event.data === 150) errorMsg = "Playback Blocked by Owner (Copyright)";
-            
-            log(`PLAYER ERROR ${event.data}: ${errorMsg}`, true);
-        }
-
-        function onPlayerStateChange(event) {
-            if (event.data === YT.PlayerState.PLAYING) log("State: PLAYING");
-            if (event.data === YT.PlayerState.BUFFERING) log("State: BUFFERING");
-            if (event.data === YT.PlayerState.CUED) log("State: CUED (Ready to play)");
-        }
-
-        // 3. Main Logic
-        async function startProcess() {
-            const q = document.getElementById('query').value.trim();
-            if(!isPlayerReady) return alert("Player not ready yet. Wait a second.");
-            
-            log(`Starting Search for: ${q}...`);
-
-            try {
-                // FETCH DATA
-                const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=10&q=${encodeURIComponent(q)}&key=${MY_KEY}`;
-                const res = await fetch(url);
-                const data = await res.json();
-
-                if (data.error) {
-                    log(`API Error: ${data.error.message}`, true);
-                    return;
-                }
-
-                if (!data.items || data.items.length === 0) {
-                    log("No videos found.", true);
-                    return;
-                }
-
-                // EXTRACT IDs
-                const videoIds = data.items.map(item => item.id.videoId);
-                log(`Found ${videoIds.length} videos. IDs: ${videoIds.join(', ')}`);
-
-                // LOAD PLAYLIST
-                // We use 'loadPlaylist' to force the queue UI
-                log("Sending 'loadPlaylist' command to player...");
-                
-                player.loadPlaylist({
-                    playlist: videoIds,
-                    index: 0,
-                    startSeconds: 0
-                });
-
-            } catch (e) {
-                log(`Network Error: ${e.message}`, true);
-            }
-        }
     </script>
 </body>
 </html>
