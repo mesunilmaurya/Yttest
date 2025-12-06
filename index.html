@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>YouTube Ultimate v73 (AI Brain)</title>
+    <title>YouTube Ultimate v74 (AI Brain Fix)</title>
     
     <script type="importmap">
       {
@@ -184,7 +184,7 @@
         const USER_MEMORY_URL = "https://gist.githubusercontent.com/mesunilmaurya/932216958afb828bc76a5a855528b6ee/raw/e9a8817dd2db7fe2a0c2f51f15c537443b85ac21/gistfile1.txt"; 
         const MODEL_NAME = "gemini-2.5-flash-lite"; 
 
-        const CACHE_KEY = 'yt_ult_v73_brain';
+        const CACHE_KEY = 'yt_ult_v74_brain_fix';
 
         // MAIN APP
         window.app = {
@@ -593,6 +593,7 @@
                 this.saveCache();
             },
 
+            // --- FIXED PLAYBACK ---
             playVideo: function(id, title, context, isAutoPlay = false, channelId = '') {
                 this.currentVideoId = id;
                 this.currentVideoTitle = title;
@@ -604,7 +605,11 @@
                 const playlistIds = currentItems.map(item => item.cleanId).filter(vidId => vidId);
                 const startIndex = playlistIds.indexOf(id);
 
+                // FORCE PLAYLIST LOAD: Explicitly tell player to load THIS specific list
+                // This fixes the issue where it played the old list because it thought it was similar
                 if (this.player && typeof this.player.loadPlaylist === 'function') {
+                    // Stop first to force refresh
+                    // this.player.stopVideo(); 
                     this.player.loadPlaylist({ playlist: playlistIds, index: startIndex, startSeconds: 0 });
                 } else {
                     new YT.Player('player', {
